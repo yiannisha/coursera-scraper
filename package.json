@@ -13,6 +13,8 @@
         "chalk": "^4.1.1",
         "configstore": "^5.0.1",
         "figlet": "^1.5.0",
+        "fs": "0.0.1-security",
+        "html-to-formatted-text": "^2.7.0",
         "inquirer": "^8.1.1",
         "nodejs-file-downloader": "^4.7.1"
     }

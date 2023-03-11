@@ -6,6 +6,8 @@ const chalk = require('chalk');
 const figlet = require('figlet');
 const Downloader = require('nodejs-file-downloader');
 const { assert } = require('console');
+const fs = require('fs')
+const htmlToFormattedText = require('html-to-formatted-text');
 
 /**
  * Local configuration store to persists course ID and CAUTH value
@@ -210,6 +212,36 @@ const app = (() => {
     }
 
     /**
+     * Downloads the source file for the given module asset.
+     * @param {int} supplementtNum The numerical sequence of the supplement (i.e. 01, 02, 03, ...)
+     * @param {object} supplement The supplement object extracted from the response of `onDemandSupplements.v1` API
+     * @param {int} moduleNum The numerical sequence of the module (i.e. 01, 02, 03, ...)
+     * @param {object} module The week object extracted from the course details
+     * @param {int} weekNum The numerical sequence of the week (i.e. 01, 02, 03, ...)
+     * @param {object} week The week object extracted from the course details
+     */
+    async function scrapeSupplement(supplementNum, supplement, moduleNum, module, weekNum, week) {
+        log(
+            `      ${chalk.white('Supplement')} ${chalk.yellow(
+                `#${padZero(supplementNum)} - ` + `Downloading 720p lecture video`
+            )}`
+        );
+
+        const moduleName = module.name.replace(/\n/g," ").replace(/[<>:"/\\|?*\x00-\x1F]| +$/g,"").replace(/^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/,x=>x+"_");
+        const fileName = `${padZero(supplementNum)} - ${moduleName}.txt`;
+        const directory = path.join('.', _cid, 'Week ' + padZero(weekNum), padZero(moduleNum) + ' - ' + moduleName);
+        const inputHtml = supplement.definition.renderableHtmlWithMetadata.renderableHtml;
+        const input = htmlToFormattedText(inputHtml);
+        if (!fs.existsSync(directory)) {
+            fs.mkdirSync(directory, { recursive: true });
+        }
+        fs.writeFile(path.join(directory, fileName), input, (err) => {
+            if (err) throw err + '\nUnable to get supplement.\n';
+        });
+        log(`      ${chalk.white('Supplement')} ${chalk.green(`#${padZero(supplementNum)} - Saved '${fileName}'`)}`);
+    }
+
+    /**
      * Scrapes the given module by looping over each of its assets and videos. The function creates a pool
      * of promises to fetch all the assets and videos concurrently.
      * Assets are fetched via `onDemandLectureAssets.v1` API and downloaded via `scrapeAsset()`
@@ -254,9 +286,32 @@ const app = (() => {
                     console.log('      Module does not have any downloadable videos.');
                 } else throw err + '\nUnable to fetch lecture video.\n';
             });
-        const resModule = await Promise.all([lectureAssets, lectureVideos]);
+        const lectureSupplements = axios
+            .get(
+                `https://www.coursera.org/api/onDemandSupplements.v1/${_courseDetails.courseId}~${module.id}?includes=asset&fields=openCourseAssets.v1(typeName)%2CopenCourseAssets.v1(definition)`,
+                { headers: { Cookie: `CAUTH=${_cauth}` } }
+            )
+            .catch((err) => {
+                if (
+                    err &&
+                    err.response &&
+                    err.response.data &&
+                    err.response.data.message &&
+                    err.response.data.message.startsWith('Wrong content type for item StoredItem')
+                ) {
+                    console.log('      Module does not have any supplement assets.');
+                } else throw err + '\nUnable to fetch lecture supplements.\n';
+            });
+        const resModule = await Promise.all([lectureAssets, lectureVideos, lectureSupplements]);
         let assetNum = 0;
         const promises = [];
+        // resModule[2] has the supplements
+        if (resModule[2]) {
+            for (const supplement of resModule[2].data.linked['openCourseAssets.v1']) {
+                assetNum += 1;
+                promises.push(scrapeSupplement(assetNum, supplement, moduleNum, module, weekNum, week));
+            }
+        }
         // resModule[1] has the videos
         if (resModule[1]) {
             const video = resModule[1].data.linked['onDemandVideos.v1'][0];
