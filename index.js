@@ -308,7 +308,7 @@ const app = (() => {
     /**
      * Main app logic:
      * 1) Get the course ID and CAUTH value by prompting the user
-     * 2) Authenticate and fet the user ID via `adminUserPermissions.v1` API
+     * 2) Authenticate and fetch the user ID via `adminUserPermissions.v1` API
      * 3) Get the course details via `guidedCourseWeekCards.v1` API
      * 4) Scrape the course and download & save all course assets & videos
      *
